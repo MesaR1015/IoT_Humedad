@@ -195,22 +195,51 @@ if "df" in st.session_state:
         plt.close(fig_h)
 
     # ── Pestaña: Preparación de datos ────────────────────────────────────────
-    if df_crudo.isna().any().any():
-            st.subheader("Efecto de la interpolación")
-            
-            # Selector para alternar entre variables
-            col_referencia = st.selectbox("Selecciona la variable a inspeccionar:", COLUMNAS, index=1)
-            
+    with tab_prep:
+        st.subheader("1. Tipos de datos")
+        st.caption("Verificación de que el índice sea fecha/hora y las variables sean numéricas.")
+        tipos = pd.DataFrame({"Tipo de dato": df_crudo.dtypes.astype(str)})
+        st.dataframe(tipos, use_container_width=True)
+
+        st.subheader("2. Detección de datos faltantes")
+        faltantes = df_crudo.isna().sum()
+        porcentaje = (df_crudo.isna().mean() * 100).round(2)
+        resumen_faltantes = pd.DataFrame({"Valores Faltantes": faltantes, "Porcentaje (%)": porcentaje})
+        st.dataframe(resumen_faltantes, use_container_width=True)
+
+        st.subheader("3. Efecto de la interpolación")
+        if df_crudo.isna().any().any():
+            col_referencia = st.selectbox(
+                "Selecciona la variable a inspeccionar:",
+                COLUMNAS,
+                index=1,
+                key="prep_select_var"
+            )
             color_map = {"temperatura": "tab:red", "humedad": "tab:blue", "sensacion_termica": "tab:green"}
+            
             fig, ax = plt.subplots(figsize=(8, 3))
             ax.plot(df_crudo.index, df_crudo[col_referencia], marker="o", linestyle="none",
                     color="gray", alpha=0.6, label="Datos originales (con huecos)")
-            ax.plot(df.index, df[col_referencia], color=color_map[col_referencia], alpha=0.8, label="Serie interpolada")
+            ax.plot(df.index, df[col_referencia], color=color_map.get(col_referencia, "tab:blue"),
+                    alpha=0.8, label="Serie interpolada")
             ax.legend(fontsize=8)
             ax.set_title(f"Interpolación aplicada sobre {col_referencia}")
             fig.autofmt_xdate()
             st.pyplot(fig, use_container_width=True)
             plt.close(fig)
+        else:
+            st.info("ℹ️ No se encontraron datos faltantes en esta consulta. La serie está completa y no requirió interpolación.")
+
+        st.subheader("4. Valores atípicos (outliers, regla IQR)")
+        hay_outliers = False
+        for col in COLUMNAS:
+            outliers = detectar_outliers_iqr(df[col])
+            if not outliers.empty:
+                hay_outliers = True
+                st.markdown(f"**{col}** — {len(outliers)} outlier(s):")
+                st.dataframe(outliers.rename("Valor"), use_container_width=True)
+        if not hay_outliers:
+            st.info("ℹ️ No se detectaron outliers según la regla del rango intercuartílico (IQR).")
 
     # ── Pestaña: Análisis del modelo ─────────────────────────────────────────
     with tab_modelo:

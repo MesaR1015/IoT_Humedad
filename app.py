@@ -58,8 +58,13 @@ def obtener_datos_crudos(url: str, token: str, org: str, bucket: str, measuremen
 
 
 def preparar_datos(df_crudo: pd.DataFrame) -> pd.DataFrame:
-    """Interpola por tiempo y descarta los bordes que no se pudieron completar."""
-    return df_crudo.interpolate(method="time").dropna()
+    """Interpola y luego promedia las lecturas cada 30 minutos para reducir ruido."""
+    df_interp = df_crudo.interpolate(method="time").dropna()
+    
+    # Agrupa por ventanas de 30 minutos y calcula el promedio
+    df_30min = df_interp.resample("30min").mean().dropna()
+    
+    return df_30min
 
 
 def detectar_outliers_iqr(serie: pd.Series) -> pd.Series:

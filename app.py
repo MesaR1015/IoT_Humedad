@@ -170,7 +170,9 @@ if "df" in st.session_state:
     # ── Pestaña: Estadísticos ────────────────────────────────────────────────
     with tab_stats:
         st.subheader("Histórico de lecturas")
-        fig, ax = plt.subplots(figsize=(8, 3.5))
+        
+        # Gráfico comparativo general
+        fig, ax = plt.subplots(figsize=(8, 3))
         ax.plot(df.index, df["temperatura"], label="Temperatura (°C)", color="tab:red")
         ax.plot(df.index, df["humedad"], label="Humedad (%)", color="tab:blue")
         ax.plot(df.index, df["sensacion_termica"], label="Sensación Térmica (°C)", color="tab:green", alpha=0.7)
@@ -180,60 +182,35 @@ if "df" in st.session_state:
         st.pyplot(fig, use_container_width=True)
         plt.close(fig)
 
-        st.subheader("Estadísticos descriptivos")
-        st.caption("Mínimo, máximo, promedio y desviación estándar de cada variable (datos ya preparados).")
-        st.dataframe(df[COLUMNAS].describe().T.round(2), use_container_width=True)
-
-        st.subheader("Distribución por variable")
-        fig, axes = plt.subplots(1, 3, figsize=(9, 3.2))
-        for ax, col in zip(axes, COLUMNAS):
-            df.boxplot(column=col, ax=ax)
-            ax.set_title(col, fontsize=9)
-        plt.tight_layout()
-        st.pyplot(fig, use_container_width=True)
-        plt.close(fig)
+        # Gráfico individual de Humedad (Sección 5)
+        st.subheader("Análisis de Humedad en el tiempo (Sección 5)")
+        fig_h, ax_h = plt.subplots(figsize=(8, 3))
+        ax_h.plot(df.index, df["humedad"], color="tab:blue", label="Humedad (%)")
+        ax_h.set_ylabel("Humedad (%)")
+        ax_h.set_xlabel("Tiempo")
+        ax_h.set_title("Comportamiento de la Humedad Relativa")
+        ax_h.grid(True, linestyle="--", alpha=0.5)
+        fig_h.autofmt_xdate()
+        st.pyplot(fig_h, use_container_width=True)
+        plt.close(fig_h)
 
     # ── Pestaña: Preparación de datos ────────────────────────────────────────
-    with tab_prep:
-        st.subheader("Tipos de datos")
-        st.caption("El índice debe ser de tipo fecha/hora y las variables numéricas (float).")
-        tipos = pd.DataFrame({"tipo": df_crudo.dtypes.astype(str)})
-        st.dataframe(tipos, use_container_width=True)
-
-        st.subheader("Datos faltantes (antes de preparar)")
-        faltantes = df_crudo.isna().sum()
-        porcentaje = (df_crudo.isna().mean() * 100).round(2)
-        st.dataframe(
-            pd.DataFrame({"faltantes": faltantes, "porcentaje (%)": porcentaje}),
-            use_container_width=True,
-        )
-
-        if df_crudo.isna().any().any():
+    if df_crudo.isna().any().any():
             st.subheader("Efecto de la interpolación")
-            col_referencia = "temperatura"
+            
+            # Selector para alternar entre variables
+            col_referencia = st.selectbox("Selecciona la variable a inspeccionar:", COLUMNAS, index=1)
+            
+            color_map = {"temperatura": "tab:red", "humedad": "tab:blue", "sensacion_termica": "tab:green"}
             fig, ax = plt.subplots(figsize=(8, 3))
             ax.plot(df_crudo.index, df_crudo[col_referencia], marker="o", linestyle="none",
-                    color="crimson", alpha=0.6, label="Datos originales (con huecos)")
-            ax.plot(df.index, df[col_referencia], color="tab:red", alpha=0.8, label="Serie interpolada")
+                    color="gray", alpha=0.6, label="Datos originales (con huecos)")
+            ax.plot(df.index, df[col_referencia], color=color_map[col_referencia], alpha=0.8, label="Serie interpolada")
             ax.legend(fontsize=8)
             ax.set_title(f"Interpolación aplicada sobre {col_referencia}")
             fig.autofmt_xdate()
             st.pyplot(fig, use_container_width=True)
             plt.close(fig)
-        else:
-            st.info("No se encontraron datos faltantes en esta consulta — no fue necesario interpolar.")
-
-        st.subheader("Valores atípicos (outliers, regla IQR)")
-        st.caption("Se muestran para revisión — no se eliminan automáticamente de los datos usados en el modelo.")
-        hay_outliers = False
-        for col in COLUMNAS:
-            outliers = detectar_outliers_iqr(df[col])
-            if not outliers.empty:
-                hay_outliers = True
-                st.markdown(f"**{col}** — {len(outliers)} outlier(s):")
-                st.dataframe(outliers.rename("valor"), use_container_width=True)
-        if not hay_outliers:
-            st.info("No se detectaron outliers según la regla del rango intercuartílico (IQR).")
 
     # ── Pestaña: Análisis del modelo ─────────────────────────────────────────
     with tab_modelo:
@@ -265,19 +242,21 @@ if "df" in st.session_state:
 
     # ── Pestaña: Predicción ───────────────────────────────────────────────────
     with tab_pred:
-        st.subheader("Predicción con tus propios coeficientes")
+        st.subheader("Predicción con coeficientes del modelo")
         st.markdown(
-            "Entrena el modelo en tu Colab y copia aquí los coeficientes β₀, β₁ y β₂ que obtuviste, "
-            "junto con una temperatura y humedad, para calcular la predicción aplicando la fórmula directamente."
-        )
-        st.latex(
-            r"\text{sensación\_térmica} = \beta_0 + \beta_1 \cdot \text{temperatura} + \beta_2 \cdot \text{humedad}"
+            "Los coeficientes se cargan automáticamente a partir del modelo entrenado con los datos de InfluxDB, "
+            "pero puedes ajustarlos manualmente si deseas probar otros valores."
         )
 
+        # Carga por defecto de los valores calculados por scikit-learn
+        beta0_def = float(modelo.intercept_)
+        beta1_def = float(modelo.coef_[0])
+        beta2_def = float(modelo.coef_[1])
+
         bc1, bc2, bc3 = st.columns(3)
-        beta0_input = bc1.number_input("β₀ (intercepto)", value=0.0, format="%.4f")
-        beta1_input = bc2.number_input("β₁ (coef. temperatura)", value=0.0, format="%.4f")
-        beta2_input = bc3.number_input("β₂ (coef. humedad)", value=0.0, format="%.4f")
+        beta0_input = bc1.number_input("β₀ (intercepto)", value=beta0_def, format="%.4f")
+        beta1_input = bc2.number_input("β₁ (coef. temperatura)", value=beta1_def, format="%.4f")
+        beta2_input = bc3.number_input("β₂ (coef. humedad)", value=beta2_def, format="%.4f")
 
         pc1, pc2 = st.columns(2)
         temp_manual = pc1.number_input("Temperatura (°C)", value=float(round(ultima["temperatura"], 1)),
@@ -288,6 +267,3 @@ if "df" in st.session_state:
         if st.button("🔮 Predecir sensación térmica", use_container_width=True):
             prediccion_manual = beta0_input + beta1_input * temp_manual + beta2_input * hum_manual
             st.success(f"Sensación térmica estimada: **{prediccion_manual:.2f} °C**")
-
-else:
-    st.info("Presiona **Consultar datos y entrenar modelo** en la barra lateral para comenzar.")
